@@ -23,9 +23,7 @@ function checkPostAccess(post, member) {
         return PERMIT_ACCESS;
     }
 
-    const memberHasPlan = member.stripe && member.stripe.subscriptions && member.stripe.subscriptions.length;
-
-    if (post.visibility === 'paid' && memberHasPlan) {
+    if (post.visibility === 'paid' && member.status === 'paid') {
         return PERMIT_ACCESS;
     }
 

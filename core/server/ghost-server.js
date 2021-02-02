@@ -19,12 +19,8 @@ const stoppable = require('stoppable');
  * ## GhostServer
  */
 class GhostServer {
-    /**
-     * @constructor
-     * @param {Object} rootApp - parent express instance
-     */
-    constructor(rootApp) {
-        this.rootApp = rootApp;
+    constructor() {
+        this.rootApp = null;
         this.httpServer = null;
 
         // Expose config module for use externally.
@@ -124,7 +120,23 @@ class GhostServer {
                     });
 
                     // Output job queue length every 5 seconds
-                    setInterval(() => logging.warn(`${jobService.queue.length()} jobs in the queue. Idle: ${jobService.queue.idle()}`), 5000);
+                    setInterval(() => {
+                        logging.warn(`${jobService.queue.length()} jobs in the queue. Idle: ${jobService.queue.idle()}`);
+
+                        const runningScheduledjobs = Object.keys(jobService.bree.workers);
+                        if (Object.keys(jobService.bree.workers).length) {
+                            logging.warn(`${Object.keys(jobService.bree.workers).length} jobs running: ${runningScheduledjobs}`);
+                        }
+
+                        const scheduledJobs = Object.keys(jobService.bree.intervals);
+                        if (Object.keys(jobService.bree.intervals).length) {
+                            logging.warn(`${Object.keys(jobService.bree.intervals).length} scheduled jobs: ${scheduledJobs}`);
+                        }
+
+                        if (runningScheduledjobs.length === 0 && scheduledJobs.length === 0) {
+                            logging.warn('No scheduled or running jobs');
+                        }
+                    }, 5000);
                 }
 
                 return GhostServer.announceServerReadiness()
@@ -182,6 +194,15 @@ class GhostServer {
             this.httpServer = null;
             this._logStopMessages();
         }
+    }
+
+    /**
+    * @param  {Object} externalApp - express app instance
+    * @return {Promise} Resolves once Ghost has switched HTTP Servers
+    */
+    async swapHttpApp(externalApp) {
+        await this._stopServer();
+        await this.start(externalApp);
     }
 
     /**

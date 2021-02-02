@@ -193,6 +193,22 @@ describe('Authentication API v3', function () {
                 .expect(404);
         });
 
+        it('try to accept with invite and existing email address', function () {
+            return request
+                .post(localUtils.API.getApiQuery('authentication/invitation'))
+                .set('Origin', config.get('url'))
+                .send({
+                    invitation: [{
+                        token: testUtils.DataGenerator.forKnex.invites[0].token,
+                        password: '12345678910',
+                        email: testUtils.DataGenerator.forKnex.users[0].email,
+                        name: 'invited'
+                    }]
+                })
+                .expect('Content-Type', /json/)
+                .expect(422);
+        });
+
         it('try to accept with invite', function () {
             return request
                 .post(localUtils.API.getApiQuery('authentication/invitation'))
@@ -290,6 +306,71 @@ describe('Authentication API v3', function () {
                     should.exist(res.body.errors);
                     res.body.errors[0].type.should.eql('UnauthorizedError');
                     res.body.errors[0].message.should.eql('Cannot reset password.');
+                    res.body.errors[0].context.should.eql('Invalid password reset link.');
+                });
+        });
+
+        it('reset password: expired token', function () {
+            return models.User.getOwnerUser(testUtils.context.internal)
+                .then(function (ownerUser) {
+                    const dateInThePast = Date.now() - (1000 * 60);
+                    const token = security.tokens.resetToken.generateHash({
+                        expires: dateInThePast,
+                        email: user.email,
+                        dbHash: settingsCache.get('db_hash'),
+                        password: ownerUser.get('password')
+                    });
+
+                    return request
+                        .put(localUtils.API.getApiQuery('authentication/passwordreset'))
+                        .set('Origin', config.get('url'))
+                        .set('Accept', 'application/json')
+                        .send({
+                            passwordreset: [{
+                                token: token,
+                                newPassword: 'thisissupersafe',
+                                ne2Password: 'thisissupersafe'
+                            }]
+                        })
+                        .expect('Content-Type', /json/)
+                        .expect('Cache-Control', testUtils.cacheRules.private)
+                        .expect(400);
+                })
+                .then((res) => {
+                    should.exist(res.body.errors);
+                    res.body.errors[0].type.should.eql('BadRequestError');
+                    res.body.errors[0].message.should.eql('Cannot reset password.');
+                    res.body.errors[0].context.should.eql('Password reset link expired.');
+                });
+        });
+
+        it('reset password: unmatched token', function () {
+            const token = security.tokens.resetToken.generateHash({
+                expires: Date.now() + (1000 * 60),
+                email: user.email,
+                dbHash: settingsCache.get('db_hash'),
+                password: 'invalid_password'
+            });
+
+            return request
+                .put(localUtils.API.getApiQuery('authentication/passwordreset'))
+                .set('Origin', config.get('url'))
+                .set('Accept', 'application/json')
+                .send({
+                    passwordreset: [{
+                        token: token,
+                        newPassword: 'thisissupersafe',
+                        ne2Password: 'thisissupersafe'
+                    }]
+                })
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(400)
+                .then((res) => {
+                    should.exist(res.body.errors);
+                    res.body.errors[0].type.should.eql('BadRequestError');
+                    res.body.errors[0].message.should.eql('Cannot reset password.');
+                    res.body.errors[0].context.should.eql('Password reset link has already been used.');
                 });
         });
 

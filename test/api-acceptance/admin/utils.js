@@ -24,7 +24,7 @@ const expectedProperties = {
 
     action: ['id', 'resource_type', 'actor_type', 'event', 'created_at', 'actor'],
 
-    config: ['version', 'environment', 'database', 'mail', 'labs', 'clientExtensions', 'enableDeveloperExperiments', 'useGravatar', 'stripeDirect', 'portal'],
+    config: ['version', 'environment', 'database', 'mail', 'labs', 'clientExtensions', 'enableDeveloperExperiments', 'useGravatar', 'stripeDirect', 'emailAnalytics'],
 
     post: _(schema.posts)
         .keys()
@@ -57,7 +57,7 @@ const expectedProperties = {
         // deprecated
         .without('author_id', 'author')
         // pages are not sent as emails
-        .without('send_email_when_published')
+        .without('email_recipient_filter')
         // always returns computed properties
         .concat('url', 'primary_tag', 'primary_author', 'excerpt')
         // returned by default
@@ -114,6 +114,9 @@ const expectedProperties = {
     email: _(schema.emails)
         .keys(),
     email_preview: ['html', 'subject', 'plaintext'],
+    email_recipient: _(schema.email_recipients)
+        .keys()
+        .filter(key => key.indexOf('@@') === -1),
     snippet: _(schema.snippets).keys()
 };
 

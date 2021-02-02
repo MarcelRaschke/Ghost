@@ -45,17 +45,17 @@ Post = ghostBookshelf.Model.extend({
     defaults: function defaults() {
         let visibility = 'public';
 
-        if (settingsCache.get('labs') && (settingsCache.get('labs').members === true) && settingsCache.get('default_content_visibility')) {
+        if (settingsCache.get('default_content_visibility')) {
             visibility = settingsCache.get('default_content_visibility');
         }
 
         return {
-            send_email_when_published: false,
             uuid: uuid.v4(),
             status: 'draft',
             featured: false,
             type: 'post',
-            visibility: visibility
+            visibility: visibility,
+            email_recipient_filter: 'none'
         };
     },
 
@@ -71,6 +71,10 @@ Post = ghostBookshelf.Model.extend({
     relationsMeta: {
         posts_meta: {
             targetTableName: 'posts_meta',
+            foreignKey: 'post_id'
+        },
+        email: {
+            targetTableName: 'emails',
             foreignKey: 'post_id'
         }
     },
@@ -97,6 +101,33 @@ Post = ghostBookshelf.Model.extend({
         let postsMetaKeys = _.without(ghostBookshelf.model('PostsMeta').prototype.orderAttributes(), 'posts_meta.id', 'posts_meta.post_id');
 
         return [...keys, ...postsMetaKeys];
+    },
+
+    orderRawQuery: function orderRawQuery(field, direction, withRelated) {
+        if (field === 'email.open_rate' && withRelated && withRelated.indexOf('email') > -1) {
+            return {
+                // *1.0 is needed on one of the columns to prevent sqlite from
+                // performing integer division rounding and always giving 0.
+                // Order by emails.track_opens desc first so we always tracked emails
+                // before untracked emails in the posts list.
+                orderByRaw: `
+                    emails.track_opens desc,
+                    emails.opened_count * 1.0 / emails.email_count * 100 ${direction},
+                    posts.created_at desc`,
+                eagerLoad: 'email.open_rate'
+            };
+        }
+    },
+
+    filterExpansions: function filterExpansions() {
+        const postsMetaKeys = _.without(ghostBookshelf.model('PostsMeta').prototype.orderAttributes(), 'posts_meta.id', 'posts_meta.post_id');
+
+        return postsMetaKeys.map((pmk) => {
+            return {
+                key: pmk.split('.')[1],
+                replacement: pmk
+            };
+        });
     },
 
     emitChange: function emitChange(event, options = {}) {
@@ -439,7 +470,7 @@ Post = ghostBookshelf.Model.extend({
             } catch (err) {
                 throw new errors.ValidationError({
                     message: 'Invalid mobiledoc structure.',
-                    help: 'https://ghost.org/docs/concepts/posts/'
+                    help: 'https://ghost.org/docs/publishing/'
                 });
             }
         }
@@ -493,19 +524,17 @@ Post = ghostBookshelf.Model.extend({
             }
         }
 
-        // send_email_when_published is read-only and should only be set using a query param when publishing/scheduling
-        if (options.send_email_when_published && this.hasChanged('status') && (newStatus === 'published' || newStatus === 'scheduled')) {
-            this.set('send_email_when_published', true);
+        // email_recipient_filter is read-only and should only be set using a query param when publishing/scheduling
+        if (options.email_recipient_filter && options.email_recipient_filter !== 'none' && this.hasChanged('status') && (newStatus === 'published' || newStatus === 'scheduled')) {
+            this.set('email_recipient_filter', options.email_recipient_filter);
         }
 
-        // ensure draft posts have the send_email_when_published reset unless an email has already been sent
+        // ensure draft posts have the email_recipient_filter reset unless an email has already been sent
         if (newStatus === 'draft' && this.hasChanged('status')) {
             ops.push(function ensureSendEmailWhenPublishedIsUnchanged() {
                 return self.related('email').fetch({transacting: options.transacting}).then((email) => {
-                    if (email) {
-                        self.set('send_email_when_published', true);
-                    } else {
-                        self.set('send_email_when_published', false);
+                    if (!email) {
+                        self.set('email_recipient_filter', 'none');
                     }
                 });
             });
@@ -831,7 +860,7 @@ Post = ghostBookshelf.Model.extend({
             findPage: ['status'],
             findAll: ['columns', 'filter'],
             destroy: ['destroyAll', 'destroyBy'],
-            edit: ['filter', 'send_email_when_published', 'force_rerender']
+            edit: ['filter', 'email_recipient_filter', 'force_rerender']
         };
 
         // The post model additionally supports having a formats option

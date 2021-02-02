@@ -59,7 +59,7 @@ describe('DB API', function () {
                 const jsonResponse = res.body;
                 should.exist(jsonResponse.db);
                 jsonResponse.db.should.have.length(1);
-                Object.keys(jsonResponse.db[0].data).length.should.eql(28);
+                Object.keys(jsonResponse.db[0].data).length.should.eql(29);
             });
     });
 
@@ -130,7 +130,7 @@ describe('DB API', function () {
             .expect(415);
     });
 
-    it('backup can be triggered by backup integration', function () {
+    it('export can be triggered by backup integration', function () {
         const backupQuery = `?filename=test`;
         const fsStub = sinon.stub(fs, 'writeFile').resolves();
 
@@ -146,7 +146,7 @@ describe('DB API', function () {
             });
     });
 
-    it('backup can not be triggered by integration other than backup', function () {
+    it('export can not be triggered by integration other than backup', function () {
         const fsStub = sinon.stub(fs, 'writeFile').resolves();
 
         return request.post(localUtils.API.getApiQuery(`db/backup`))
@@ -161,7 +161,7 @@ describe('DB API', function () {
             });
     });
 
-    it('backup can be triggered by Admin authentication', function () {
+    it('export can be triggered by Admin authentication', function () {
         const fsStub = sinon.stub(fs, 'writeFile').resolves();
 
         return request.post(localUtils.API.getApiQuery(`db/backup`))

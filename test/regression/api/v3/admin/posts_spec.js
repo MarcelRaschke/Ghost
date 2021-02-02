@@ -1,3 +1,4 @@
+const _ = require('lodash');
 const should = require('should');
 const supertest = require('supertest');
 const ObjectId = require('bson-objectid');
@@ -9,7 +10,7 @@ const localUtils = require('./utils');
 const ghost = testUtils.startGhost;
 let request;
 
-describe('Posts API (v3)', function () {
+describe('Posts API', function () {
     let ghostServer;
     let ownerCookie;
 
@@ -20,7 +21,7 @@ describe('Posts API (v3)', function () {
                 request = supertest.agent(config.get('url'));
             })
             .then(function () {
-                return localUtils.doAuth(request, 'users:extra', 'posts');
+                return localUtils.doAuth(request, 'users:extra', 'posts', 'emails');
             })
             .then(function (cookie) {
                 ownerCookie = cookie;
@@ -60,7 +61,7 @@ describe('Posts API (v3)', function () {
         });
 
         it('combined fields, formats, include and non existing', function (done) {
-            request.get(localUtils.API.getApiQuery('posts/?formats=mobiledoc,html,plaintext&fields=id,title,primary_tag,doesnotexist&include=authors,tags'))
+            request.get(localUtils.API.getApiQuery('posts/?formats=mobiledoc,html,plaintext&fields=id,title,primary_tag,doesnotexist&include=authors,tags,email'))
                 .set('Origin', config.get('url'))
                 .expect('Content-Type', /json/)
                 .expect('Cache-Control', testUtils.cacheRules.private)
@@ -81,12 +82,173 @@ describe('Posts API (v3)', function () {
                         'post',
                         null,
                         null,
-                        ['mobiledoc', 'plaintext', 'id', 'title', 'html', 'authors', 'tags', 'primary_tag']
+                        ['mobiledoc', 'plaintext', 'id', 'title', 'html', 'authors', 'tags', 'primary_tag', 'email']
                     );
 
                     localUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
 
                     done();
+                });
+        });
+
+        it('can filter by fields coming from posts_meta table non null meta_description', function (done) {
+            request.get(localUtils.API.getApiQuery(`posts/?filter=meta_description:-null`))
+                .set('Origin', config.get('url'))
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(200)
+                .end(function (err, res) {
+                    if (err) {
+                        return done(err);
+                    }
+
+                    should.not.exist(res.headers['x-cache-invalidate']);
+                    const jsonResponse = res.body;
+                    should.exist(jsonResponse.posts);
+                    localUtils.API.checkResponse(jsonResponse, 'posts');
+                    jsonResponse.posts.should.have.length(2);
+                    jsonResponse.posts.forEach((post) => {
+                        should.notEqual(post.meta_description, null);
+                    });
+
+                    localUtils.API.checkResponse(
+                        jsonResponse.posts[0],
+                        'post'
+                    );
+
+                    localUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
+
+                    done();
+                });
+        });
+
+        it('can filter by fields coming from posts_meta table by value', function (done) {
+            request.get(localUtils.API.getApiQuery(`posts/?filter=meta_description:'meta description for short and sweet'`))
+                .set('Origin', config.get('url'))
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(200)
+                .end(function (err, res) {
+                    if (err) {
+                        return done(err);
+                    }
+
+                    should.not.exist(res.headers['x-cache-invalidate']);
+                    const jsonResponse = res.body;
+                    should.exist(jsonResponse.posts);
+                    localUtils.API.checkResponse(jsonResponse, 'posts');
+                    jsonResponse.posts.should.have.length(1);
+                    jsonResponse.posts[0].id.should.equal(testUtils.DataGenerator.Content.posts[2].id);
+                    jsonResponse.posts[0].meta_description.should.equal('meta description for short and sweet');
+
+                    localUtils.API.checkResponse(
+                        jsonResponse.posts[0],
+                        'post'
+                    );
+
+                    localUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
+
+                    done();
+                });
+        });
+
+        it('can order by fields coming from posts_meta table', function (done) {
+            request.get(localUtils.API.getApiQuery('posts/?order=meta_description%20ASC'))
+                .set('Origin', config.get('url'))
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(200)
+                .end(function (err, res) {
+                    if (err) {
+                        return done(err);
+                    }
+
+                    should.not.exist(res.headers['x-cache-invalidate']);
+                    const jsonResponse = res.body;
+                    should.exist(jsonResponse.posts);
+                    localUtils.API.checkResponse(jsonResponse, 'posts');
+                    jsonResponse.posts.should.have.length(13);
+
+                    should.equal(jsonResponse.posts[0].meta_description, null);
+                    jsonResponse.posts[12].slug.should.equal('short-and-sweet');
+                    jsonResponse.posts[12].meta_description.should.equal('meta description for short and sweet');
+
+                    localUtils.API.checkResponse(
+                        jsonResponse.posts[0],
+                        'post'
+                    );
+
+                    localUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
+
+                    done();
+                });
+        });
+
+        it('can order by email open rate', async function () {
+            try {
+                await testUtils.createEmailedPost({
+                    postOptions: {
+                        post: {
+                            slug: '80-open-rate'
+                        }
+                    },
+                    emailOptions: {
+                        email: {
+                            email_count: 100,
+                            opened_count: 80,
+                            track_opens: true
+                        }
+                    }
+                });
+
+                await testUtils.createEmailedPost({
+                    postOptions: {
+                        post: {
+                            slug: '60-open-rate'
+                        }
+                    },
+                    emailOptions: {
+                        email: {
+                            email_count: 100,
+                            opened_count: 60,
+                            track_opens: true
+                        }
+                    }
+                });
+            } catch (err) {
+                if (_.isArray(err)) {
+                    throw err[0];
+                }
+                throw err;
+            }
+
+            await request.get(localUtils.API.getApiQuery('posts/?order=email.open_rate%20DESC'))
+                .set('Origin', config.get('url'))
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(200)
+                .then((res) => {
+                    should.not.exist(res.headers['x-cache-invalidate']);
+                    const jsonResponse = res.body;
+                    should.exist(jsonResponse.posts);
+                    localUtils.API.checkResponse(jsonResponse, 'posts');
+                    jsonResponse.posts.should.have.length(15);
+
+                    jsonResponse.posts[0].slug.should.equal('80-open-rate', 'DESC 1st');
+                    jsonResponse.posts[1].slug.should.equal('60-open-rate', 'DESC 2nd');
+
+                    localUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
+                });
+
+            await request.get(localUtils.API.getApiQuery('posts/?order=email.open_rate%20ASC'))
+                .set('Origin', config.get('url'))
+                .expect('Content-Type', /json/)
+                .expect('Cache-Control', testUtils.cacheRules.private)
+                .expect(200)
+                .then((res) => {
+                    const jsonResponse = res.body;
+                    jsonResponse.posts[0].slug.should.equal('60-open-rate', 'ASC 1st');
+                    jsonResponse.posts[1].slug.should.equal('80-open-rate', 'ASC 2nd');
                 });
         });
     });
@@ -140,6 +302,9 @@ describe('Posts API (v3)', function () {
                     should.exist(res.body.posts);
                     should.exist(res.body.posts[0].title);
                     res.body.posts[0].title.should.equal('(Untitled)');
+
+                    should.exist(res.headers.location);
+                    res.headers.location.should.equal(`http://127.0.0.1:2369${localUtils.API.getApiQuery('posts/')}${res.body.posts[0].id}/`);
                 });
         });
     });
@@ -340,6 +505,32 @@ describe('Posts API (v3)', function () {
                     should.exist(res.body.posts);
                     should.exist(res.body.posts[0].slug);
                     res.body.posts[0].slug.should.equal('this-is-invisible');
+                });
+        });
+
+        it('accepts visibility parameter', function () {
+            return request
+                .get(localUtils.API.getApiQuery(`posts/${testUtils.DataGenerator.Content.posts[0].id}/`))
+                .set('Origin', config.get('url'))
+                .expect(200)
+                .then((res) => {
+                    return request
+                        .put(localUtils.API.getApiQuery('posts/' + testUtils.DataGenerator.Content.posts[0].id + '/'))
+                        .set('Origin', config.get('url'))
+                        .send({
+                            posts: [{
+                                visibility: 'members',
+                                updated_at: res.body.posts[0].updated_at
+                            }]
+                        })
+                        .expect('Content-Type', /json/)
+                        .expect('Cache-Control', testUtils.cacheRules.private)
+                        .expect(200);
+                })
+                .then((res) => {
+                    should.exist(res.body.posts);
+                    should.exist(res.body.posts[0].visibility);
+                    res.body.posts[0].visibility.should.equal('members');
                 });
         });
 

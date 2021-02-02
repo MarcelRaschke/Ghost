@@ -40,7 +40,6 @@ const configureGrunt = function (grunt) {
     grunt.loadNpmTasks('grunt-contrib-compress');
     grunt.loadNpmTasks('grunt-contrib-copy');
     grunt.loadNpmTasks('grunt-contrib-symlink');
-    grunt.loadNpmTasks('grunt-contrib-uglify');
     grunt.loadNpmTasks('grunt-contrib-watch');
     grunt.loadNpmTasks('grunt-express-server');
     grunt.loadNpmTasks('grunt-mocha-cli');
@@ -220,7 +219,7 @@ const configureGrunt = function (grunt) {
                     const upstream = grunt.option('upstream') || process.env.GHOST_UPSTREAM || 'upstream';
                     grunt.log.writeln('Pulling down the latest master from ' + upstream);
                     return `
-                        git submodule sync
+                        git submodule sync && \
                         git submodule update
 
                         if ! git diff --exit-code --quiet --ignore-submodules=untracked; then
@@ -229,10 +228,22 @@ const configureGrunt = function (grunt) {
                         fi
 
                         git checkout master
-                        git pull ${upstream} master
-                        yarn
+
+                        if git config remote.${upstream}.url > /dev/null; then
+                            git pull ${upstream} master
+                        else
+                            git pull origin master
+                        fi
+
+                        yarn && \
                         git submodule foreach "
-                            git checkout master && git pull ${upstream} master
+                            git checkout master
+
+                            if git config remote.${upstream}.url > /dev/null; then
+                                git pull ${upstream} master
+                            else
+                                git pull origin master
+                            fi
                         "
                     `;
                 }
@@ -280,17 +291,6 @@ const configureGrunt = function (grunt) {
             pinned: {
                 options: {
                     params: '--init'
-                }
-            }
-        },
-
-        uglify: {
-            prod: {
-                options: {
-                    sourceMap: false
-                },
-                files: {
-                    'core/server/public/members.min.js': 'core/server/public/members.js'
                 }
             }
         },
@@ -501,7 +501,7 @@ const configureGrunt = function (grunt) {
     //
     // Ghost's GitHub repository contains the un-built source code for Ghost. If you're looking for the already
     // built release zips, you can get these from the [release page](https://github.com/TryGhost/Ghost/releases) on
-    // GitHub or from https://ghost.org/download. These zip files are created using the [grunt release](#release)
+    // GitHub or from https://ghost.org/docs/install/. These zip files are created using the [grunt release](#release)
     // task.
     //
     // If you want to work on Ghost core, or you want to use the source files from GitHub, then you have to build
@@ -548,7 +548,7 @@ const configureGrunt = function (grunt) {
     //
     // It is otherwise the same as running `grunt`, but is only used when running Ghost in the `production` env.
     grunt.registerTask('prod', 'Build JS & templates for production',
-        ['subgrunt:prod', 'uglify:prod', 'postcss:prod']);
+        ['subgrunt:prod', 'postcss:prod']);
 
     // ### Live reload
     // `grunt dev` - build assets on the fly whilst developing
@@ -614,9 +614,13 @@ const configureGrunt = function (grunt) {
                 }]
             });
 
+            if (!grunt.option('skip-update')) {
+                grunt.task
+                    .run('update_submodules:pinned')
+                    .run('subgrunt:init');
+            }
+
             grunt.task
-                .run('update_submodules:pinned')
-                .run('subgrunt:init')
                 .run('clean:built')
                 .run('clean:tmp')
                 .run('prod')

@@ -17,24 +17,26 @@ const expectedProperties = {
     slug: ['slug'],
     invites: ['invites', 'meta'],
     themes: ['themes'],
+    members: ['members', 'meta'],
 
     post: _(schema.posts)
         .keys()
         // by default we only return mobiledoc
         .without('html', 'plaintext')
-        .without('visibility')
         .without('locale')
         .without('page')
         .without('author_id', 'author')
+        .without('type')
         // always returns computed properties
         // primary_tag and primary_author properties are included
         // only because authors and tags are always included
         .concat('url', 'primary_tag', 'primary_author', 'excerpt')
-        .concat('authors', 'tags')
+        .concat('authors', 'tags', 'email')
         // returns meta fields from `posts_meta` schema
         .concat(
             ..._(schema.posts_meta).keys().without('post_id', 'id')
         )
+        .concat('send_email_when_published')
     ,
     user: _(schema.users)
         .keys()
@@ -54,6 +56,14 @@ const expectedProperties = {
     subscriber: _(schema.subscribers)
         .keys()
     ,
+    member: _(schema.members)
+        .keys()
+        .concat('avatar_image')
+        .concat('comped')
+        .concat('labels')
+        .without('status')
+    ,
+    member_signin_url: ['member_id', 'url'],
     role: _(schema.roles)
         .keys()
     ,
@@ -68,6 +78,8 @@ const expectedProperties = {
     ,
     webhook: _(schema.webhooks)
         .keys()
+    ,
+    email_preview: ['html', 'subject', 'plaintext']
 };
 
 _.each(expectedProperties, (value, key) => {

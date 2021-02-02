@@ -1,22 +1,31 @@
 const _ = require('lodash');
 
-const order = function order(Bookshelf) {
+const orderPlugin = function orderPlugin(Bookshelf) {
     Bookshelf.Model = Bookshelf.Model.extend({
         orderAttributes() {},
+        orderRawQuery() {},
 
         parseOrderOption: function (orderQueryString, withRelated) {
-            let orderAttributes;
-            let result;
-            let rules;
+            const order = {};
+            const orderRaw = [];
+            const eagerLoadArray = [];
 
-            orderAttributes = this.orderAttributes();
+            const orderAttributes = this.orderAttributes();
             if (withRelated && withRelated.indexOf('count.posts') > -1) {
                 orderAttributes.push('count.posts');
             }
-            result = {};
-            rules = orderQueryString.split(',');
 
-            _.each(rules, function (rule) {
+            let rules = [];
+            // CASE: repeat order query parameter keys are present
+            if (_.isArray(orderQueryString)) {
+                orderQueryString.forEach((qs) => {
+                    rules.push(...qs.split(','));
+                });
+            } else {
+                rules = orderQueryString.split(',');
+            }
+
+            _.each(rules, (rule) => {
                 let match;
                 let field;
                 let direction;
@@ -31,6 +40,16 @@ const order = function order(Bookshelf) {
                 field = match[1].toLowerCase();
                 direction = match[2].toUpperCase();
 
+                const orderRawQuery = this.orderRawQuery(field, direction, withRelated);
+
+                if (orderRawQuery) {
+                    orderRaw.push(orderRawQuery.orderByRaw);
+                    if (orderRawQuery.eagerLoad) {
+                        eagerLoadArray.push(orderRawQuery.eagerLoad);
+                    }
+                    return;
+                }
+
                 const matchingOrderAttribute = orderAttributes.find((orderAttribute) => {
                     // NOTE: this logic assumes we use different field names for "parent" and "child" relations.
                     //       E.g.: ['parent.title', 'child.title'] and ['child.title', 'parent.title'] - would not
@@ -43,12 +62,16 @@ const order = function order(Bookshelf) {
                     return;
                 }
 
-                result[matchingOrderAttribute] = direction;
+                order[matchingOrderAttribute] = direction;
             });
 
-            return result;
+            return {
+                order,
+                orderRaw: orderRaw.join(', '),
+                eagerLoad: _.uniq(eagerLoadArray)
+            };
         }
     });
 };
 
-module.exports = order;
+module.exports = orderPlugin;

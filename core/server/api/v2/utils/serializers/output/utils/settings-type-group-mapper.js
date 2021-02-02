@@ -10,7 +10,9 @@ const groupTypeMapping = {
     members: 'members',
     private: 'private',
     portal: 'portal',
-    email: 'bulk_email'
+    email: 'bulk_email',
+    newsletter: 'newsletter',
+    firstpromoter: 'firstpromoter'
 };
 
 const mapGroupToType = (group) => {

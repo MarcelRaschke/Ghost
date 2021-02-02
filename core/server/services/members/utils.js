@@ -9,7 +9,7 @@ module.exports.formattedMemberResponse = function formattedMemberResponse(member
         firstname: member.name && member.name.split(' ')[0],
         avatar_image: member.avatar_image,
         subscribed: !!member.subscribed,
-        subscriptions: member.stripe ? member.stripe.subscriptions : [],
-        paid: member.stripe ? member.stripe.subscriptions.length !== 0 : false
+        subscriptions: member.subscriptions || [],
+        paid: member.status === 'paid'
     };
 };
